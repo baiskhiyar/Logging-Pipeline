@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3.8
+    container_name: zookeeper
+    platform: linux/arm64 # Correct placement
+    ports:
+      - "2181:2181"
+    volumes:
+      - 'zookeeper_data:/bitnami/zookeeper'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+
+  kafka:
+    image: docker.io/bitnami/kafka:3.4
+    container_name: kafka
+    platform: linux/arm64 # Correct placement
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    volumes:
+      - 'kafka_data:/bitnami/kafka'
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,INTER_BROKER:PLAINTEXT,INTERNAL:PLAINTEXT
+      - KAFKA_CFG_LISTENERS=CLIENT://:9092,INTER_BROKER://:9094,INTERNAL://:19092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://localhost:9092,INTERNAL://kafka:19092
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.1
+    container_name: elasticsearch
+    platform: linux/arm64 # Correct placement
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+  fluentd:
+    platform: linux/arm64 # Correct placement
+    build:
+      context: ./fluentd
+    container_name: fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ./fluentd/fluent.conf:/fluentd/etc/fluent.conf
+    depends_on:
+      - kafka
+      - elasticsearch
+    environment:
+      - FLUENT_ELASTICSEARCH_HOST=elasticsearch
+      - FLUENT_ELASTICSEARCH_PORT=9200
+      - FLUENT_KAFKA_BROKER=kafka:9092
+
+  grafana:
+    image: grafana/grafana-oss:9.5.3
+    container_name: grafana
+    platform: linux/arm64 # Correct placement
+    ports:
+      - "3000:3000"
+    depends_on:
+      - elasticsearch
+    volumes:
+      - grafanadata:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  zookeeper_data:
+    driver: local
+  kafka_data:
+    driver: local
+  esdata:
+    driver: local
+  grafanadata:
+    driver: local
